@@ -1,0 +1,8 @@
+<VisualMicro>
+  <Program Name="ex2" Ext=".pde" Location="D:\Robotics\iNexus 2013\Programing\Robo-1 Autonomous\Test Codes\PID\ex2">
+    <Compile IsCompiled="0" CompilerErrors="0" ConfigurationName="Debug" StopOnError="False" OptimiseLibs="True" OptimiseCore="True" BuildPath="C:\Users\Diunuge\AppData\Local\VMicro\Arduino\Builds\ex2\mega2560" />
+    <Platform Name="Arduino">
+      <Board Name="mega2560" Description="Arduino Mega 2560" CoreFolder="E:\Electronic\Softwares\Arduino Setup\arduino-0023\hardware\arduino\cores\arduino" VariantFullPath="" />
+    </Platform>
+  </Program>
+</VisualMicro>
