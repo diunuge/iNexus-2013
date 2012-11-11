@@ -1,0 +1,27 @@
+//check functions	
+	while(1){
+		sendSensorStatus();
+		if(isAllWhite()){
+			Serial.write("All white.  ");
+			//sendSensorStatus();
+		}
+		else if(!isAllWhite()){
+			Serial.write("Not all white.  ");
+			//sendSensorStatus();
+		}
+		if(isAllBlack()){
+			Serial.write("All black.  ");
+			//sendSensorStatus();
+		}
+		else if(!isAllBlack()){
+			Serial.write("Not All black.  ");
+			//sendSensorStatus();
+		}
+		delay(2000);
+	}
+
+//dry run
+		while(1){
+		Serial.write("Dry ");
+		delay(1000);
+		}
