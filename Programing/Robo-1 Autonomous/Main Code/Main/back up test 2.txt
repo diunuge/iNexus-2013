@@ -1,0 +1,1028 @@
+// Authors: Diunuge Buddhika Wijesinghe
+// Competition iNexus 2013
+// version: 2.0v: Not Optimized
+// Last mod: 10-11-2012
+
+/********************* include libraries *******************************/
+#include <Servo.h>
+#include <LiquidCrystal.h>
+#include <QTRSensors.h>
+
+/********************* pin naming ***************************************/
+
+/*! @define   Scout_PIN    Analog pin number which connected to SCOUT(front) sensor */
+#define Scout_PIN    9 
+#define Sensor1_PIN 11
+#define Sensor2_PIN 10
+#define Sensor3_PIN  6 
+#define Sensor4_PIN  3 
+#define Sensor5_PIN  2 
+#define Sensor6_PIN  1 
+#define Sensor7_PIN  0 
+#define Sensor8_PIN  4 
+#define Sensor9_PIN  8 
+
+#define Motor_Left_Forward  34 	//orange
+#define Mortor_Left_Reverse 35
+#define Motor_Left_Enable   9	//yellow
+#define Motor_Right_Forward 36
+#define Motor_Right_Reverse 37
+#define Motor_Right_Enable  10	//Green
+
+
+/*! @define EncoderL  Left Motor Encoder PIN number */
+#define EncoderL
+/*! @define EncoderR  Right Motor Encoder PIN number */
+#define EncoderR
+
+
+
+/****************** coding helping definitions ********************/
+
+/*! @define   Scout    Returns relevent digital state of Scout sensor from it's analog reading */
+#define Scout   sensorDigitalState(Scout_PIN)
+#define Sensor1 sensorDigitalState(Sensor1_PIN)
+#define Sensor2 sensorDigitalState(Sensor2_PIN)
+#define Sensor3 sensorDigitalState(Sensor3_PIN)
+#define Sensor4 sensorDigitalState(Sensor4_PIN)
+#define Sensor5 sensorDigitalState(Sensor5_PIN)
+#define Sensor6 sensorDigitalState(Sensor6_PIN)
+#define Sensor7 sensorDigitalState(Sensor7_PIN)
+#define Sensor8 sensorDigitalState(Sensor8_PIN)
+#define Sensor9 sensorDigitalState(Sensor9_PIN)
+
+
+
+/******************  define variables status  ********************/
+
+#define RUN_TYPE_UNAVAILABLE 0
+#define RUN_TYPE_STARTED 1
+#define RUN_TYPE_FINISHED 2
+
+/*! @define   NO_OF_GRID_ROWS    Number of rows that grid has */
+#define NO_OF_GRID_ROWS 5 //7
+/*! @define   NO_OF_GRID_COLUMNS    Number of columns that grid has */
+#define NO_OF_GRID_COLUMNS 5 //7
+
+
+/*! @define   BLACK    Sensor input state for the darker color of the path */
+#define BLACK HIGH
+/*! @define   BLACK    Sensor input state for the lighter color of the path */
+#define WHITE LOW
+
+/*! @define   HIGH_THRESHOLD    Threshold value(0-1024) of input 'HIGH' for convert analog sensor pannel values to digital */
+#define HIGH_THRESHOLD 408 // ~2.5v
+/*! @define   LOW_THRESHOLD     Threshold value(0-1024) of input 'LOW' for convert analog sensor pannel values to digital */
+#define LOW_THRESHOLD  408 // ~1v
+
+#define SLOW_PWM 180
+#define MID_PWM  200
+#define FAST_PWM 200
+
+/*! @define NORTH  Indicate the reference north which uses to navigate autonomus robot */
+#define NORTH 0
+#define EAST  1
+#define SOUTH 2
+#define WEST  3
+
+
+/********************* globle variables ***********************/
+
+/*!
+ * @var         sensorPannel
+ * @abstract    create a object of QTRSensorsAnalog.
+ * @discussion  create a object of QTRSensorsAnalog to use analog pid.
+*/
+QTRSensorsAnalog sensorPannel((unsigned char[]) {11, 10, 6, 3, 2, 1, 0, 4, 8}, 9);
+
+/*!
+ * @var         sensors
+ * @abstract    store analog values of sensor panel.
+ * @discussion  Stores analog values(0-1024) of main sensor panel. this gets update from sensorPanel.readLine()
+*/
+unsigned int sensors[9];
+
+int position,error,lastError,error_reverse,motorSpeed,position_reverse;
+
+/*!
+ * @var         currentDirection
+ * @abstract    Indicate current bot direction.
+ * @discussion  Stores direction of the autonomus robot which used to navigate through grid
+*/
+int currentDirection;
+
+/*!
+ * @var         currentPosition
+ * @abstract    Indicate current bot position.
+ * @discussion  Stores position of the autonomus robot using node datatype which used to navigate through grid
+*/
+node currentPosition;
+
+/*!
+ * @var         turningAngles
+ * @abstract    Stores the rotation angle to change direction.
+ * @discussion  This gives rotation angles as encoded integer for change direstion.
+ *              Used in "turnToDirection(int direction)" function.
+ *              Angles  0=> 0;  1=> 90;  2=> 180;  -1=> 90 
+*/
+const int turningAngles[4][4] = {{0,1,2,-1}, 
+								 {-1,0,1,2}, 
+								 {2,-1,0,1}, 
+								 {1,2,-1,0}};
+
+/*!
+ * @var         grid
+ * @abstract    Status of the grid nodes.
+ * @discussion  Stores data about status of the grid nodes.
+ *              whether is it blocked or not.
+*/
+int grid[NO_OF_GRID_ROWS+1][NO_OF_GRID_COLUMNS+1] = {-1};
+
+int DRY_RUN_STATE = RUN_TYPE_UNAVAILABLE;
+int RUN_STATE = RUN_TYPE_UNAVAILABLE;
+
+float Kp, Ki, Kd;
+int deviation, previousDeviation;
+float correction, totalError, integral_correction;
+
+int MIN_RPM, MID_RPM, MAX_RPM, MAX_CORRECTION, TEST_RPM, PID_RightRPM, PID_LeftRPM;
+
+
+
+/************************** function prototypes *********************/
+/*
+//sensing functions
+boolean isDryRun();
+void simple_path_follow();
+void setPID();
+void path_follow_PID();
+int isOnThePath();
+boolean isAllWhite();
+boolean isAllBlack();
+
+//motion control functions
+void motorLeft_foward(int pwm);
+void motorRight_foward(int pwm);
+void motorLeft_reverse(int pwm);
+void motorRight_reverse(int pwm);
+void motorLeft_stop();
+void motorRight_stop();
+
+void moveForward(int leftpwm,int rightpwm);
+void turnRight(int pwm);
+void turnLeft(int pwm);
+void rotateClockwise(int leftpwm,int rightpwm);
+void rotateAntiClockwise(int leftpwm,int rightpwm);
+void stop();
+void turn90toLeft();
+void turn90toRight();
+void rotateClockwise90();
+void rotateClockwise180();
+void rotateAntiClockwise90();
+void gotoNextNode();
+void turnTowardNode(node currentNode, node nextNode);
+void turnToDirection(int direction);
+
+//Algorithms
+void aStar();
+void findPathDijkstra(node startingNode, node endNode, shortestPath* path);
+void findPathCustom();
+
+//testing function
+void testSerial(); 
+void sendSensorStatus();
+*/
+
+/**********************************************************************/
+/* setup code goes here */
+void setup()
+{
+	//Do common initialization which is not dependable of type of run
+	Serial.begin(9600);
+
+	setPID();
+
+	//pin configurations
+	pinMode(Scout_PIN, INPUT);      
+    pinMode(Sensor1_PIN, INPUT);      
+	pinMode(Sensor2_PIN, INPUT);      
+	pinMode(Sensor3_PIN, INPUT);      
+	pinMode(Sensor4_PIN, INPUT);      
+	pinMode(Sensor5_PIN, INPUT);      
+	pinMode(Sensor6_PIN, INPUT);      
+	pinMode(Sensor7_PIN, INPUT);      
+	pinMode(Sensor8_PIN, INPUT);      
+	pinMode(Sensor9_PIN, INPUT); 
+
+	pinMode(Motor_Left_Forward,OUTPUT);
+	pinMode(Mortor_Left_Reverse,OUTPUT);
+	pinMode(Motor_Right_Forward,OUTPUT);
+	pinMode(Motor_Right_Reverse,OUTPUT);
+
+	currentDirection = 1;
+
+	currentPosition.x = 1;
+	currentPosition.y = 0;
+	
+	//if this is dry run: find and save grid parameters: initialize variables
+	if(isDryRun()){
+		//initialize the grid parameters
+		for(int counter0=1; counter0<(NO_OF_GRID_ROWS); counter0++)
+			for(int counter1=1; counter1<(NO_OF_GRID_COLUMNS); counter1++)
+				grid[counter0][counter1] = 0;
+		
+		
+	}
+	//if this is main run: load the parameters from dry run
+	else{
+		
+	}
+	
+}
+
+/****************    end of setup()   ***************************/
+
+/* main loop after setup code */
+void loop()
+{
+	Serial.write("Starting..");
+	delay(1000);
+
+	calibrateSensors();
+
+	//test
+	while(1){
+		//testGoTroughTGrid();
+		//line_following_pd();
+		//simple_path_follow();
+		//path_follow_PID();
+		//sendSensorStatus();
+		//lineFollowPID();
+		//delay(1000);
+	}
+
+	if(isDryRun()){ //this is dry run
+		Serial.println("Starting the dry run.. ");
+		while(1){
+			gotoNextNode();
+
+			//go through the grid
+			
+		}
+	}
+	else{
+		while(1){
+			Serial.println("competition");
+		}
+	}
+
+	return;
+}
+
+/******************   end of loop()   ********************************/
+
+//sensing functions
+boolean isDryRun(){
+	//read external signal: Probably from a switch
+	return true;
+}
+
+/*!
+ * @function    sensorDigitalState
+ * @abstract    Convert analog sensor state to digital
+ * @discussion  This function take a analog pin number, read analog value,
+ *              compare it with given threshold values, convert to relevant digital state.
+ *              This can use for digital PID or normal line following
+ * @param       analogPIN    The analog pin number. This must be an Integer. EX: 0 for A0
+ * @param       HIGH_THRESHOLD  threshold value for digital high
+ * @param       LOW_THRESHOLD   threshold value for digital low 
+ * @result      A integer which indicate digital state.
+*/
+int sensorDigitalState(int analogPIN){
+	int analogValue = analogRead(analogPIN);
+	if(analogValue> HIGH_THRESHOLD)
+		return HIGH;
+	else if(analogValue < LOW_THRESHOLD)
+		return LOW;
+	else
+		return -1; // error status. this should be handled in future functions or remove this
+}
+
+boolean isNode(){
+	if( Scout==WHITE && Sensor1==WHITE && Sensor2==WHITE && Sensor3==WHITE && Sensor7==WHITE && Sensor8==WHITE && Sensor9==WHITE){
+		return true;
+    }
+    else
+        return false;
+}
+
+boolean isBlockedNode(){
+	if( isNode() ){
+		if((Sensor4==BLACK && Sensor5==BLACK && Sensor6==BLACK) || (Sensor4==BLACK && Sensor5==BLACK && Sensor6==WHITE) || (Sensor4==WHITE && Sensor5==BLACK && Sensor6==BLACK))
+			return true;
+		else
+			return false;
+    }
+    else
+        return false;
+}
+
+boolean isAllowedNode(){
+	if( isNode() ){
+		if((Sensor4==WHITE && Sensor5==WHITE && Sensor6==WHITE) || (Sensor4==BLACK && Sensor5==WHITE && Sensor6==WHITE) || (Sensor4==WHITE && Sensor5==WHITE && Sensor6==BLACK))
+			return true;
+		else
+			return false;
+    }
+    else
+        return false;
+}
+
+void setPID(){
+      MIN_RPM = 155;       //155
+      MID_RPM = 205;
+      MAX_RPM = 255;
+	  MAX_CORRECTION = 100;
+
+      TEST_RPM = 200;
+
+      Kp = 0.1;
+      Ki = 0;
+      Kd = 2;
+
+      totalError = 0;
+      previousDeviation = 0;
+
+	  lastError =0;
+
+      PID_LeftRPM = 0;
+      PID_RightRPM = 0;
+}
+
+void line_following_pd()
+{
+  position = sensorPannel.readLine(sensors);
+  error = position - 4000;
+
+  //Serial.println(error);
+  
+  motorSpeed = Kp * error + Kd * (error - lastError);
+  lastError = error;
+ 
+
+  
+ PID_RightRPM = MAX_RPM + motorSpeed;
+ PID_LeftRPM = MAX_RPM - motorSpeed;
+
+  if (PID_RightRPM < 0)
+    PID_RightRPM = 0;
+  if (PID_LeftRPM < 0)
+    PID_LeftRPM = 0;
+ 
+ if (PID_RightRPM > 255)
+    PID_RightRPM = 255;
+    
+  if (PID_LeftRPM > 255)
+    PID_LeftRPM = 255;
+ 
+  moveForward(PID_LeftRPM, PID_RightRPM);
+}
+
+void calibrateSensors(){
+	Serial.write("Calibrating start..");
+	int i;
+	#define motionSpeed 100
+	rotateAntiClockwise(motionSpeed,motionSpeed);
+	for (i = 0; i < 10; i++)
+		sensorPannel.calibrate();
+	stop(20);
+	rotateClockwise(motionSpeed,motionSpeed);
+	for (i = 0; i < 10; i++)
+		sensorPannel.calibrate();
+	stop(500);
+	rotateClockwise(motionSpeed,motionSpeed);
+	for (i = 0; i < 10; i++)
+		sensorPannel.calibrate();
+	stop(20);
+	rotateAntiClockwise(motionSpeed,motionSpeed);
+	for (i = 0; i < 10; i++)
+		sensorPannel.calibrate();
+	stop(2000);
+	/*
+	rotateAntiClockwise90();
+	
+	moveForward(calibrateMotionSpeed,calibrateMotionSpeed);
+	for (i = 0; i < 10; i++)  // make the calibration take about 5 seconds
+	{
+		sensorPannel.calibrate();
+		//delay(2);
+	}
+	stop(20);
+	reverse(calibrateMotionSpeed,calibrateMotionSpeed);
+	for (i = 0; i < 10; i++)  // make the calibration take about 100ms
+	{
+		sensorPannel.calibrate();
+		//delay(2);
+	}
+	stop(20);
+	reverse(calibrateMotionSpeed,calibrateMotionSpeed);
+	for (i = 0; i < 10; i++)  // make the calibration take about 100ms
+	{
+		sensorPannel.calibrate();
+		//delay(2);
+	}
+	stop(20);
+	moveForward(calibrateMotionSpeed,calibrateMotionSpeed);
+	for (i = 0; i < 10; i++)  // make the calibration take about 5 seconds
+	{
+		sensorPannel.calibrate();
+		//delay(2);
+	}
+	stop(20);
+	rotateClockwise90();
+	stop(50);*/
+	Serial.println("Calibrating end..");
+}
+
+void path_follow_PID(){
+	int Sens3 = Sensor3;
+	int Sens4 = Sensor4;
+	int Sens5 = Sensor5;
+	int Sens6 = Sensor6;
+	int Sens7 = Sensor7;
+
+	  //calculate daviation
+      if( Sens3==WHITE && Sens4==BLACK && Sens5==BLACK && Sens6==BLACK && Sens7==BLACK)
+          deviation = 5;
+      if( Sens3==WHITE && Sens4==WHITE && Sens5==BLACK && Sens6==BLACK && Sens7==BLACK)
+          deviation = 4;
+      if( Sens3==WHITE && Sens4==WHITE && Sens5==WHITE && Sens6==BLACK && Sens7==BLACK)
+          deviation = 3;
+      if( Sens3==BLACK && Sens4==WHITE && Sens5==BLACK && Sens6==BLACK && Sens7==BLACK)
+          deviation = 2;
+
+      if( Sens3==BLACK && Sens4==WHITE && Sens5==WHITE && Sens6==BLACK && Sens7==BLACK)
+          deviation = 1;
+      if( Sens3==BLACK && Sens4==WHITE && Sens5==WHITE && Sens6==WHITE && Sens7==BLACK)
+          deviation = 0;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==WHITE && Sens6==BLACK && Sens7==BLACK)
+          deviation = 0;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==WHITE && Sens6==WHITE && Sens7==BLACK)
+          deviation = -1;
+
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==BLACK && Sens6==WHITE && Sens7==BLACK)
+          deviation = -2;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==WHITE && Sens6==WHITE && Sens7==WHITE)
+          deviation = -3;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==BLACK && Sens6==WHITE && Sens7==WHITE)
+          deviation = -4;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==BLACK && Sens6==BLACK && Sens7==WHITE)
+          deviation = -5;
+
+      correction =  Kp*deviation + Ki*totalError + Kd*(deviation-previousDeviation);
+      totalError += correction;
+      previousDeviation = deviation;
+
+      PID_LeftRPM = MID_RPM + correction;
+      PID_RightRPM = MID_RPM - correction;
+
+      moveForward(PID_LeftRPM, PID_RightRPM);
+
+      //}
+      //correction = 0;
+      //totalError = 0;
+      //sendSensorStatus();
+}
+
+void lineFollowPID(){
+
+	int Sens3 = Sensor3;
+	int Sens4 = Sensor4;
+	int Sens5 = Sensor5;
+	int Sens6 = Sensor6;
+	int Sens7 = Sensor7;
+
+      	  //calculate daviation
+      if( Sens3==WHITE && Sens4==BLACK && Sens5==BLACK && Sens6==BLACK && Sens7==BLACK)
+          deviation = 5;
+      if( Sens3==WHITE && Sens4==WHITE && Sens5==BLACK && Sens6==BLACK && Sens7==BLACK)
+          deviation = 4;
+      if( Sens3==WHITE && Sens4==WHITE && Sens5==WHITE && Sens6==BLACK && Sens7==BLACK)
+          deviation = 3;
+      if( Sens3==BLACK && Sens4==WHITE && Sens5==BLACK && Sens6==BLACK && Sens7==BLACK)
+          deviation = 2;
+
+      if( Sens3==BLACK && Sens4==WHITE && Sens5==WHITE && Sens6==BLACK && Sens7==BLACK)
+          deviation = 1;
+      if( Sens3==BLACK && Sens4==WHITE && Sens5==WHITE && Sens6==WHITE && Sens7==BLACK)
+          deviation = 0;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==WHITE && Sens6==BLACK && Sens7==BLACK)
+          deviation = 0;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==WHITE && Sens6==WHITE && Sens7==BLACK)
+          deviation = -1;
+
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==BLACK && Sens6==WHITE && Sens7==BLACK)
+          deviation = -2;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==WHITE && Sens6==WHITE && Sens7==WHITE)
+          deviation = -3;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==BLACK && Sens6==WHITE && Sens7==WHITE)
+          deviation = -4;
+      if( Sens3==BLACK && Sens4==BLACK && Sens5==BLACK && Sens6==BLACK && Sens7==WHITE)
+          deviation = -5;
+
+      integral_correction = Ki*totalError;
+      if(integral_correction > 100)
+            integral_correction = 100;
+      if(integral_correction < -100)
+            integral_correction = -100;
+      
+      correction =  Kp*deviation + integral_correction + Kd*(deviation-previousDeviation);
+      totalError += correction;
+      previousDeviation = deviation;
+
+      if(correction > MAX_CORRECTION)
+            correction = MAX_CORRECTION;
+      if(correction < -MAX_CORRECTION)
+            correction = -MAX_CORRECTION;
+            
+      PID_LeftRPM = MAX_RPM;
+      PID_RightRPM = MAX_RPM + (int)correction;
+      
+      if(correction > 0)
+      {
+           PID_LeftRPM  = MAX_RPM - (int)correction;
+           PID_RightRPM = MAX_RPM;
+      }
+      
+      /*if(PID_LeftRPM - PID_RightRPM > max_diffrence)
+      {
+           PID_LeftRPM -= (PID_LeftRPM - PID_RightRPM)/factor_diffrence;
+      }
+      else if(PID_RightRPM - PID_LeftRPM > max_diffrence)
+      {
+           PID_RightRPM -= (PID_RightRPM - PID_LeftRPM)/factor_diffrence;
+      }*/
+
+      moveForward(PID_LeftRPM,PID_RightRPM);
+      
+      /*PID_LeftRPM = MID_RPM + (int)correction;
+      if(PID_LeftRPM > MAX_RPM)
+           PID_LeftRPM = MAX_RPM;
+
+      PID_RightRPM = MID_RPM - (int)correction;
+      if(PID_RightRPM > MAX_RPM)
+           PID_RightRPM = MAX_RPM;
+      moveForward(PID_LeftRPM, PID_RightRPM);*/
+
+}
+
+void gotoNextNode(){
+	if(isNode())
+		while(isNode())
+			moveForward(200,200);
+
+	while(!isNode())
+		line_following_pd();
+	stop();
+	//now robot at on a node
+}
+
+void simple_path_follow(){
+	if(Scout == WHITE){
+                  //on the path
+                  if( Sensor3==BLACK && Sensor4==WHITE && Sensor5==WHITE && Sensor6==BLACK && Sensor7==BLACK)
+                        moveForward(SLOW_PWM,FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==WHITE && Sensor5==WHITE && Sensor6==WHITE && Sensor7==BLACK)
+                        moveForward(FAST_PWM,FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==BLACK && Sensor5==WHITE && Sensor6==BLACK && Sensor7==BLACK)
+                        moveForward(FAST_PWM,FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==BLACK && Sensor5==WHITE && Sensor6==WHITE && Sensor7==BLACK)
+                        moveForward(FAST_PWM,SLOW_PWM);
+
+
+                  //out of pat; have to turn
+                            //turn to left
+                  else if( Sensor3==WHITE && Sensor4==BLACK && Sensor5==BLACK && Sensor6==BLACK && Sensor7==BLACK)
+                              turnLeft(FAST_PWM);
+                  else if( Sensor3==WHITE && Sensor4==WHITE && Sensor5==BLACK && Sensor6==BLACK && Sensor7==BLACK)
+                              turnLeft(FAST_PWM);
+                  else if( Sensor3==WHITE && Sensor4==WHITE && Sensor5==WHITE && Sensor6==BLACK && Sensor7==BLACK)
+                              turnLeft(FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==WHITE && Sensor5==BLACK && Sensor6==BLACK && Sensor7==BLACK)
+                              turnLeft(FAST_PWM);
+
+                             //turn to right
+                  else if( Sensor3==BLACK && Sensor4==BLACK && Sensor5==BLACK && Sensor6==WHITE && Sensor7==BLACK)
+                              turnRight(FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==BLACK && Sensor5==WHITE && Sensor6==WHITE && Sensor7==WHITE)
+                              turnRight(FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==BLACK && Sensor5==BLACK && Sensor6==WHITE && Sensor7==WHITE)
+                              turnRight(FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==BLACK && Sensor5==BLACK && Sensor6==BLACK && Sensor7==WHITE)
+                              turnRight(FAST_PWM);
+
+				  /*
+                  //special
+                  else if( Sensor3==WHITE && Sensor4==WHITE && Sensor5==WHITE && Sensor6==WHITE && Sensor7==BLACK)
+                        moveForward(FAST_PWM,FAST_PWM);
+                  else if( Sensor3==BLACK && Sensor4==WHITE && Sensor5==WHITE && Sensor6==WHITE && Sensor7==WHITE)
+                        moveForward(FAST_PWM,FAST_PWM);
+                  else if( Sensor1==BLACK && Sensor2==BLACK && Sensor3==BLACK && Sensor4==BLACK && Sensor5==BLACK && Sensor6==BLACK && Sensor7==BLACK && Sensor8==BLACK && Sensor9==BLACK)
+                        moveForward(255,255);
+				  */
+
+            else if(isAllBlack()){
+                  // all black
+                  stop();
+				  Serial.write("Stopping.. ");
+                  sendSensorStatus();
+				  delay(1000);
+            }
+            else{
+                  stop();
+                  //reverse(220,220);
+				  Serial.write("Stopping.. ");
+                  sendSensorStatus();
+                  delay(1000);
+            }
+      }
+	else{
+		stop();
+			Serial.write("Stopping.. ");
+            sendSensorStatus();
+			delay(1000);
+	}
+}
+
+boolean isAllBlack(){
+      if( Scout==BLACK && Sensor1==BLACK && Sensor2==BLACK && Sensor3==BLACK && Sensor4==BLACK && Sensor5==BLACK && Sensor6==BLACK && Sensor7==BLACK && Sensor8==BLACK && Sensor9==BLACK){
+            return true;
+      }
+      else
+            return false;
+}
+
+boolean isAllWhite(){
+      if( Scout==WHITE && Sensor1==WHITE && Sensor2==WHITE && Sensor3==WHITE && Sensor4==WHITE && Sensor5==WHITE && Sensor6==WHITE && Sensor7==WHITE && Sensor8==WHITE && Sensor9==WHITE){
+            return true;
+      }
+      else
+            return false;
+}
+
+//motion control functions
+
+void motorLeft_foward(int leftpwm){
+    digitalWrite(Motor_Left_Forward,HIGH);
+	digitalWrite(Mortor_Left_Reverse,LOW);
+	analogWrite(Motor_Left_Enable,leftpwm);
+}
+
+void motorLeft_reverse(int leftpwm){
+    digitalWrite(Motor_Left_Forward,LOW);
+	digitalWrite(Mortor_Left_Reverse,HIGH);
+	analogWrite(Motor_Left_Enable,leftpwm);
+}
+
+
+void motorRight_foward(int rightpwm){
+	digitalWrite(Motor_Right_Forward,HIGH);
+	digitalWrite(Motor_Right_Reverse,LOW);
+	analogWrite(Motor_Right_Enable,rightpwm);
+}
+
+void motorRight_reverse(int rightpwm){
+	digitalWrite(Motor_Right_Forward,LOW);
+	digitalWrite(Motor_Right_Reverse,HIGH);
+	analogWrite(Motor_Right_Enable,rightpwm);
+}
+
+void motorLeft_stop(){
+	analogWrite(Motor_Left_Enable,255);
+	digitalWrite(Motor_Left_Forward,HIGH);
+	digitalWrite(Mortor_Left_Reverse,HIGH);
+}
+
+void motorRight_stop(){
+	analogWrite(Motor_Right_Enable,255);
+	digitalWrite(Motor_Right_Forward,HIGH);
+	digitalWrite(Motor_Right_Reverse,HIGH);
+}
+
+
+void moveForward(int leftpwm,int rightpwm){
+	motorLeft_foward(leftpwm);
+    motorRight_foward(rightpwm);
+}
+
+void reverse(int leftpwm,int rightpwm){
+	motorLeft_reverse(leftpwm);
+	motorRight_reverse(rightpwm);
+}
+
+void turnRight(int pwm){
+	motorLeft_foward(pwm);
+	motorRight_stop();
+}
+
+void turnLeft(int pwm){
+	motorRight_foward(pwm);
+	motorLeft_stop();
+}
+
+void rotateClockwise(int leftpwm,int rightpwm){
+	motorLeft_foward(leftpwm);
+	motorRight_reverse(rightpwm);
+}
+
+
+void rotateAntiClockwise(int leftpwm,int rightpwm){
+	motorLeft_reverse(leftpwm);
+	motorRight_foward(rightpwm);
+}
+
+void stop(){
+	motorLeft_stop();
+    motorRight_stop();
+}
+
+void stop(int delayms){
+	motorLeft_stop();
+    motorRight_stop();
+	delay(delayms);
+}
+
+void rotateAntiClockwise90(){
+	rotateAntiClockwise(255,255);
+	delay(230);
+	stop();
+	delay(20);
+}
+
+void rotateClockwise90(){
+	rotateClockwise(255,255);
+	delay(230);
+	stop();
+	delay(20);
+}
+
+void rotateClockwise180(){ 
+	rotateClockwise90();
+	stop();
+	delay(20);
+	rotateClockwise90();
+	stop();
+	delay(20);
+}
+
+void turnToDirection(int direction){
+	
+	switch(turningAngles[currentDirection][direction]){
+		case  0: 
+			break;
+		case  1: 
+			Serial.write("90 ");
+			rotateClockwise90(); 
+			break;
+		case -1: 
+			Serial.write("-90 ");
+			rotateAntiClockwise90(); 
+			break;
+		case  2: 
+			Serial.write("180 ");
+			rotateClockwise180(); 
+			break;
+		default: 
+			break;
+	}
+	currentDirection = direction;
+}
+
+/*!
+ * @function    turnTowardAdjacentNode
+ * @abstract    turn toward a adjacent node.
+ * @discussion  turn the autonomous bot toward given adjacent node,
+ *              if they are adjacent.
+ * @param       currentNode    The current node that autonomous bot is standing.
+ * @param       adjacentNode   The adjacent node that autonomous bot should turn towards.
+ * @result      If they are not adjacent returns -1. if they are adjacent returns the direction of node2 with respect to node1
+*//*
+void turnTowardAdjacentNode(node currentNode, node adjacentNode){
+
+	int newDirection = isAdjacent();
+
+	if( newDirection != -1 ){
+		turnToDirection(newDirection);
+	}
+	else{
+		return;
+	}
+}
+*/
+/*!
+ * @function    isAdjacent
+ * @abstract    check that if two nodes are adjacent
+ * @discussion  This function take a two nodes.
+ *              Check whether they are adjacent.
+ * @param       node1    first node of node couple. reference direction will be with respect to this node.
+ * @param       node2    second node of node couple
+ * @result      If they are not adjacent returns -1. if they are adjacent returns the direction of node2 with respect to node1
+*/
+/*
+int isAdjacent(node node1, node node2){
+	if(node1.x == node2.x){
+		if(node1.y-node2.y==1){
+			return WEST;
+		}
+		else if(node1.y-node2.y==-1){
+			return EAST;
+		}
+		else{
+			return -1;
+		}
+	}else if(node1.y == node2.y){
+		if(node1.x-node2.x==1){
+			return NORTH;
+		}
+		else if(node1.x-node2.x==-1){
+			return SOUTH;
+		}
+		else{
+			return -1;
+		}
+	}else{
+		return -1;
+	}
+}
+*/
+//Algorithms
+/*void findPathDijkstra(node startingNode, node endNode, shortestPath* path){
+	
+}*/
+
+/*********************   debug functions   ********************************/
+
+void testSerial(){
+	for(int counter=0; counter<5; counter++){
+		Serial.write("Test");
+		delay(1000);
+	}
+}
+
+void sendSensorStatus(){
+      if( Sensor1 == 1){
+		  Serial.write("1");
+      }
+      else if( Sensor1 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor2 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor2 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor3 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor3 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor4 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor4 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor5 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor5 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor6 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor6 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor7 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor7 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor8 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor8 == 0){
+            Serial.write("0");
+      }
+
+      if( Sensor9 == 1){
+            Serial.write("1");
+      }
+      else if( Sensor9 == 0){
+            Serial.write("0");
+      }
+	  Serial.write(" ");
+
+      if( Scout == 1){
+            Serial.write("1");
+      }
+      else if( Scout == 0){
+            Serial.write("0");
+      }
+	  Serial.write("  ");
+}
+
+void testImmediateStop(){
+
+	Serial.write("Foward");
+	moveForward(200,200);
+	delay(2000);
+	Serial.write("Stop");
+	stop();
+	delay(1000);
+
+	Serial.write("Foward");
+	moveForward(200,200);
+	delay(2000);
+	Serial.write("Stop");
+	stop();
+	delay(1000);
+
+	Serial.write("Foward");
+	moveForward(200,200);
+	delay(2000);
+	Serial.write("Stop");
+	stop();
+	delay(1000);
+
+	Serial.write("Foward");
+	moveForward(200,200);
+	delay(2000);
+	Serial.write("Stop");
+	stop();
+	delay(1000);
+}
+
+void testGoTroughTGrid(){
+	Serial.write("First node  ");
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	rotateClockwise90();
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	rotateClockwise90();
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+	gotoNextNode();
+	stop();
+	Serial.write("node reached  ");
+	delay(500);
+}
+
+void testDirectionChange(){
+	turnToDirection(EAST);
+	delay(1000);
+	turnToDirection(NORTH);
+	delay(1000);
+	turnToDirection(WEST);
+	delay(1000);
+	turnToDirection(EAST);
+	delay(1000);
+	turnToDirection(SOUTH);
+	delay(1000);
+	turnToDirection(EAST);
+	delay(5000);
+}
